@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Cours Mike, cours!</title>
+	</head>
+	<style>
+		body {
+			background-image: url(images/cloud-sky.jpg);
+		}
+		canvas {
+			background-image: url(images/debut_jeu.png);
+			padding: 0;
+			margin: auto;
+			display: block;
+			cursor: pointer;
+			border: 2px double rgb(0, 0, 0);
+		}
+	</style>
+
+	<body>
+		<canvas width="900" height="400"></canvas>
+		<script>
+			//Récupérer la balise canvas et définir son contexte de dessin en 2d
+			let leCanvas = document.querySelector("canvas");
+			let ctx = leCanvas.getContext("2d");
+
+			/////////////////////////////// SECTION DES OBJETS /////////////////////////////////////
+			//l'objet du personnage, qu'on pourra déplacer et animer avec les touches
+			let mike = {
+				img: new Image(), //image
+				urlImage: "images/Mike_course.png", //url de l'image de départ
+				x: 0, //Position sur l'axe des x
+				y: 0, //Position sur l'axe des y
+				largeur: 117, //Largeur d'une vignette du personnage
+				hauteur: 150, //Hauteur d'une vignette du personnage
+				indexVignette: 0, //Première vignette
+				nbVignettes: 6, //Nombre de vignettes
+				sourceX: 0, //Coordonnée x de la vignette à afficher
+				vitesseX: 2, //Vitesse horizontale
+				vitesseY: 0,
+				estEnSaut: false,
+				gravite: 1,
+			};
+
+			//Charger l'image initiale du Mike
+			mike.img.src = mike.urlImage;
+			//Positionner Mike au début du jeu dans le bas à gauche
+			mike.x = leCanvas.width / 6;
+			mike.y = leCanvas.height / 2;
+
+			//Objet du fond de jeu
+			let fondJeu = {
+				img: new Image(),
+				urlImage: "images/fond_jeu.png",
+				largeur: leCanvas.width,
+				x: 0,
+				y: 0,
+				vitesseX: 6,
+				decalageX: 2,
+			};
+
+			//Charger l'image du fond
+			fondJeu.img.src = fondJeu.urlImage;
+
+			/////////////////////////////// DÉCLARATION DE VARIABLES ///////////////////////////
+			//Déclaration des touches du clavier haut et droite
+			let fleches = {
+				droite: false,
+				haut: false,
+			};
+
+			//Tableau pour stocker les boites
+			let lesBoites = [];
+
+			//Tableau pour stocker les Hotdogs
+			let lesHotDogs = [];
+
+			//Valeur initiale du compteur (Temps restant)
+			let compteur = 6000;
+
+			//Variable globale pour gérer la fin du jeu : finJeu
+			let finJeu = false;
+
+			//Nombre de hot dogs récupérés
+			let nombreDeHotdogs = 0;
+
+			/////////////////////////////// DÉCLARATIONS DES SONS ///////////////////////////
+			let sonJeu = new Audio("sons/Funny-bit.mp3");
+			let sonPerd = new Audio("sons/son-perdu.mp3");
+			let sonVictoire = new Audio("sons/Musique-Victoire.mp3");
+			let sonHotDog = new Audio("sons/collectcoin.mp3");
+
+			/////////////////////////////// INTERVALLES ET MISES À JOUR //////////////////////////
+			//Écouteur sur le Canvas pour détecter si un click a été effectué pour débuter le jeu
+			leCanvas.addEventListener("click", debuterLeJeu);
+
+			//Écouteur sur le document pour détecter si des touches de clavier sont appuyées ou relâchées
+			document.addEventListener("keydown", presserTouche);
+			document.addEventListener("keyup", relacherTouche);
+
+			//Déclarer l'intervalle du chargement des boites
+			let intervalBoite;
+			//Déclarer l'intervalle du chargment des hot dogs
+			let intervalHotDogs;
+			//Intervalle de l'actualisation du canvas
+			let intervalJeuID;
+			//Intervalle du chargement de l'image
+			let intervalImageMikeID;
+			//Intervalle du compteur
+			let intervalCompteur;
+
+			//////////////////////////////// FONCTIONS /////////////////////////////////////
+			function debuterLeJeu() {
+				//Enlever le gestionnaire d'événement qui débute le jeu
+				leCanvas.removeEventListener("click", debuterLeJeu);
+
+				//Intervalle des boites
+				intervalBoite = setInterval(chargementDeBoites, 2000);
+				//Intervalle des hot dogs
+				intervalHotDogs = setInterval(chargementDesHotDogs, 3500);
+				//Intervalle de l'actualisation du canvas
+				intervalJeuID = setInterval(actualiserJeu, 1000 / 60);
+				//Intervalle du chargement de l'image
+				intervalImageMikeID = setInterval(gererImageDeMike, 1000 / 12);
+				//Intervalle du compteur
+				intervalCompteur = setInterval(afficherTempsRestant, 6000);
+				//Chargement de la musique de fond
+				sonJeu.play();
+			}
+			//Actualiser l'affichage des objets et les actions du jeu
+			function actualiserJeu() {
+				//Effacer le contenu actuel du contexte de rendu du canvas
+				ctx.clearRect(0, 0, leCanvas.width, leCanvas.height);
+
+				//dessiner l'image de la boite
+				deplacerLesBoites();
+
+				//Déplacer Mike
+				deplacerMike();
+
+				//Déplacer les boites
+				deplacerLesBoites();
+
+				//Déplacer les HotDogs
+				deplacerLesHotDogs();
+
+				//S'il y a une collision entre Mike et le boite
+				//C'est la fin du jeu et l'utilisateur perd...
+				let siCollisionMikeEtBoite;
+				for (let uneBoite of lesBoites) {
+					siCollisionMikeEtBoite = detecterCollisionEntreRectangles(
+						mike,
+						uneBoite
+					);
+
+					if (siCollisionMikeEtBoite == true) {
+						//On enlève cette boite du tableau des boites
+						let index = lesBoites.indexOf(uneBoite);
+						lesBoites.splice(index, 1); //À partir de l'index on en enlève une
+						//Déclaration de la fin du jeu
+						finJeu = true;
+					}
+				}
+
+				for (let unHotDog of lesHotDogs) {
+					let siCollisionMikeEtHotDog =
+						detecterCollisionEntreRectanglesEtCercles(mike, unHotDog);
+
+					if (siCollisionMikeEtHotDog == true) {
+						//On incrémente le nombre d'hot-dogs
+						nombreDeHotdogs++;
+
+						//Jouer le son du gain de hotdog
+						sonHotDog.play();
+
+						//On enlève cet hotdog du tableau des hotdogs
+						let indexHotDogs = lesHotDogs.indexOf(unHotDog);
+						lesHotDogs.splice(indexHotDogs, 1); //À partir de l'index on en enlève une
+					}
+				}
+				//Afficher le temps restant(compteur)
+				afficherTempsRestant();
+
+				//Afficher le nombre d'hot-dogs obtenus
+				afficherHotDogs();
+
+				if (nombreDeHotdogs == 15) {
+					//Enlever tout ce qui est sur le canvas
+					ctx.clearRect(0, 0, leCanvas.width, leCanvas.height);
+
+					//Retirer toutes les intervalles
+					clearInterval(intervalJeuID);
+					clearInterval(intervalImageMikeID);
+					clearInterval(intervalCompteur);
+					clearInterval(intervalBoite);
+					clearInterval(intervalHotDogs);
+
+					//Enlever le son de fond
+					sonJeu.pause();
+
+					//Jouer la musique de Victoire
+					sonVictoire.play();
+
+					//Faire jouer la musique en boucle
+					sonVictoire.loop = true;
+
+					//Afficher le fond de Victoire
+					leCanvas.style.backgroundImage = "url(images/fondGagne_jeu.png)";
+				}
+
+				//Fonctions de variable "finJeu"
+				if (finJeu == true || compteur == 0) {
+					//Enlever tout ce qui est sur le canvas
+					ctx.clearRect(0, 0, leCanvas.width, leCanvas.height);
+
+					//Retirer toutes les intervalles
+					clearInterval(intervalJeuID);
+					clearInterval(intervalImageMikeID);
+					clearInterval(intervalCompteur);
+					clearInterval(intervalBoite);
+					clearInterval(intervalHotDogs);
+
+					//Enlever le son de fond
+					sonJeu.pause();
+					//son perdu
+					sonPerd.play();
+
+					//Dessiner l'image de fin de jeu
+					leCanvas.style.backgroundImage = "url(images/fondPerdu_jeu.png)";
+				}
+			}
+
+			//Fonction pour l'objet des hot-dogs et pour le dessiner
+			function chargementDeBoites() {
+				//Positionner les boites sur l'axe des x
+				let boite = {
+					img: new Image(),
+					urlImage: "images/boite-1.png",
+					y: entierHasard(0, leCanvas.height - 40),
+					x: leCanvas.width,
+					largeur: 40,
+					hauteur: 40,
+					vitesseX: entierHasard(5, 8),
+				};
+
+				//Charger l'image de la boite
+				boite.img.src = boite.urlImage;
+
+				//Mettre cette boite dans le tableau des boites
+				lesBoites.push(boite);
+
+				//Limite de haut du chargement des boites
+				let yMaxBoite = leCanvas.height - boite.hauteur;
+				if (boite.y < yMaxBoite) {
+					boite.y = 280;
+				}
+			}
+
+			//Fonction pour l'objet des hot-dogs et pour le dessiner
+			function chargementDesHotDogs() {
+				//Positionner les hot-dogs sur l'axe des x
+				let hotDog = {
+					img: new Image(),
+					urlImage: "images/hot-dog.png",
+					y: entierHasard(0, leCanvas.height - 40),
+					x: leCanvas.width,
+					largeur: 40,
+					hauteur: 40,
+					vitesseX: entierHasard(4, 9),
+				};
+
+				//Charger l'image de l'hot-dog
+				hotDog.img.src = hotDog.urlImage;
+
+				//Mettre l'hotdog dans le tableau des Hot dogs
+				lesHotDogs.push(hotDog);
+
+				//Limite de haut du chargement des hotdogs
+				let yMaxHotDog = leCanvas.height - hotDog.hauteur;
+				if (hotDog.y < yMaxHotDog) {
+					hotDog.y = 280;
+				}
+			}
+
+			//Fonction pour déplacer et dessiner le personnage
+			function deplacerMike() {
+				//Calculer les futures positions de Mike et définir la feuille de sprites à afficher
+				if (fleches.droite) {
+					//Dessiner la feuille de sprites de "course"
+					mike.img.src = "images/Mike_course.png";
+
+					//Dessiner le fond de jeu qui défile lorsqu'on presse la touche " -> "
+					defilerLeFondDeJeu();
+				} else {
+					//Dessiner le fond
+					ctx.drawImage(fondJeu.img, fondJeu.x, fondJeu.y);
+					//Dessiner la feuille de sprites de "idle"
+					mike.img.src = "images/Mike_idle.png";
+				}
+				//Faire sauter le personnage
+				if (mike.estEnSaut == true) {
+					mike.img.src = "images/Mike_saut.png";
+					mike.y += mike.vitesseY;
+					mike.vitesseY += mike.gravite;
+
+					//Si Mike est retombé..arrêter la descente
+					if (mike.y >= leCanvas.height / 2) {
+						mike.estEnSaut = false;
+					}
+				}
+
+				//Dessiner le personnage
+				ctx.drawImage(
+					mike.img,
+					mike.sourceX,
+					0,
+					mike.largeur,
+					mike.hauteur,
+					mike.x,
+					mike.y,
+					mike.largeur,
+					mike.hauteur
+				);
+			}
+
+			//Fonction pour gérer la vignette à afficher pour l'animation du personnage
+			function gererImageDeMike() {
+				//Définir la coordonnée sourceX de la vignette à afficher
+				mike.sourceX = mike.indexVignette * mike.largeur;
+
+				//Incrémenter et gérer l’index de la prochaine vignette à afficher
+				mike.indexVignette++;
+
+				if (mike.indexVignette == mike.nbVignettes) {
+					mike.indexVignette = 0;
+				}
+			}
+
+			//Fonction pour déplacer les boites
+			function deplacerLesBoites() {
+				//On la retire du tableau losrqu'elle quitte la gauche du canvas
+				for (let uneBoite of lesBoites) {
+					//Décrémenter sa vitesse sur l'axe des X
+					uneBoite.x -= uneBoite.vitesseX;
+					//Dessiner la boite
+					ctx.drawImage(uneBoite.img, uneBoite.x, uneBoite.y);
+
+					//On retire la boite du tableau si elle dépasse les limites du canvas
+					if (uneBoite.x < uneBoite.largeur) {
+						//On identifie l'index de cette boite
+						let index = lesBoites.indexOf(uneBoite);
+						//L'enlever du tableau des boites
+						lesBoites.splice(index, 1);
+					}
+
+					console.log("Nombre de boites :", lesBoites.length);
+				}
+			}
+
+			//Fonction pour déplacer les hotdogs
+			function deplacerLesHotDogs() {
+				//On la retire du tableau losrqu'elle quitte la gauche du canvas
+				for (let unHotDog of lesHotDogs) {
+					//Décrémenter sa vitesse sur l'axe des X
+					unHotDog.x -= unHotDog.vitesseX;
+					//Dessiner le Hotdog
+					ctx.drawImage(unHotDog.img, unHotDog.x, unHotDog.y);
+
+					//On retire le hot dog du tableau si elle dépasse les limites du canvas
+					if (unHotDog.x < unHotDog.largeur) {
+						//On identifie l'index de cet hot dog
+						let indexHotDogs = lesHotDogs.indexOf(unHotDog);
+						//L'enlever du tableau des Hot dog
+						lesHotDogs.splice(indexHotDogs, 1);
+					}
+
+					console.log("Nombre de hotdogs:", lesHotDogs.length);
+				}
+			}
+
+			//Fonction pour défiler le fond de jeu
+			function defilerLeFondDeJeu() {
+				//Augmenter la valeur du décalage selon la vitesse
+				fondJeu.decalageX += fondJeu.vitesseX;
+
+				if (fondJeu.decalageX >= fondJeu.largeur) {
+					fondJeu.decalageX = 0;
+				}
+
+				//Dessiner les deux images de fond de jeu
+				ctx.drawImage(fondJeu.img, 0 - fondJeu.decalageX, 0);
+				ctx.drawImage(fondJeu.img, leCanvas.width - fondJeu.decalageX, 0);
+			}
+
+			// Détecte quelles touches sont appuyées
+			function presserTouche() {
+				//Enlever les paramètres au défaut de la page
+				event.preventDefault();
+
+				//Enregistrer si une touche droite ou haut est pressée
+				if (event.keyCode == 39) {
+					//flèche droite
+					fleches.droite = true;
+				}
+				if (event.keyCode == 38) {
+					//flèche Haut
+					if (mike.estEnSaut == false) {
+						mike.estEnSaut = true;
+						mike.vitesseY = -20;
+					}
+				}
+				//Si la touche "r" est appuyée et que le jeu est terminé on recommence la partie
+				if (event.keyCode == 82) {
+					//On recharge la page HTML
+					document.location.reload();
+				}
+			}
+
+			//Détecte quelles touches sont relâchées
+			function relacherTouche() {
+				//Enlever les paramètres au défaut de la page
+				event.preventDefault();
+
+				//Enregistrer si une touche droite ou haut est relâchée
+				if (event.keyCode == 39) {
+					//flèche droite
+					fleches.droite = false;
+				}
+				if (event.keyCode == 38) {
+					//flèche de haut
+					fleches.haut = false;
+				}
+			}
+
+			//Fontion pour afficher le temps restant (compteur)
+			function afficherTempsRestant() {
+				if (compteur > 0) {
+					//Style du texte
+					ctx.font = "bold 80px Retro Gaming";
+					ctx.textBaseline = "top";
+					ctx.fillStyle = "#ffffff";
+
+					//Dessiner le texte
+					ctx.fillText(compteur, 0, 0);
+					ctx.strokeText(compteur, 0, 0);
+				}
+				//Décrémenter le compteur
+				compteur--;
+			}
+			//Fonction pour afficher le nombre d'hot-dogs ramassés
+			function afficherHotDogs() {
+				//Style du texte
+				ctx.font = "bold 30px Retro Gaming";
+				ctx.textAlign = "left";
+				ctx.textBaseline = "bottom";
+				ctx.fillStyle = "white";
+
+				//Position du texte
+				let xHotDog = leCanvas.width / 3;
+				let yHotDog = leCanvas.height;
+				//Dessiner le texte
+				ctx.fillText(nombreDeHotdogs + " " + "Hot-Dogs!", xHotDog, yHotDog);
+			}
+			//Fonction pour calculer un nombre entier au hasard entre 2 valeurs
+			function entierHasard(nbMin, nbMax) {
+				let intervalle = nbMax - nbMin;
+				return nbMin + Math.round(Math.random() * intervalle);
+			}
+
+			//Détecter la collison entre de rectangles
+			function detecterCollisionEntreRectangles(rectangle1, rectangle2) {
+				if (
+					rectangle1.x < rectangle2.x + rectangle2.largeur &&
+					rectangle1.x + rectangle1.largeur > rectangle2.x &&
+					rectangle1.y < rectangle2.y + rectangle2.hauteur &&
+					rectangle1.y + rectangle1.hauteur > rectangle2.y
+				) {
+					return true;
+				} else {
+					return false;
+				}
+			}
+
+			function detecterCollisionEntreRectanglesEtCercles(
+				leRectangle,
+				leCercle
+			) {
+				//Calculs du rayon et des coordonnées x et y du centre du cercle
+				let rayonCercle = leCercle.largeur / 2;
+				let centreX_duCercle = leCercle.x + rayonCercle;
+				let centreY_duCercle = leCercle.y + rayonCercle;
+
+				//La problématique est avec les coins des images
+				//Il faut donc vérifier de quel côté du rectangle se situe le cercle?
+				//Le code va d'abord tester quel coin du rectangle est le plus proche du cercle,
+				let coinX = centreX_duCercle;
+				let coinY = centreY_duCercle;
+				if (centreX_duCercle < leRectangle.x) {
+					coinX = leRectangle.x; //coin gauche
+				} else if (centreX_duCercle > leRectangle.x + leRectangle.largeur) {
+					coinX = leRectangle.x + leRectangle.largeur; // coin droit
+				}
+
+				if (centreY_duCercle < leRectangle.y) {
+					coinY = leRectangle.y; // coin supérieur
+				} else if (centreY_duCercle > leRectangle.y + leRectangle.hauteur) {
+					coinY = leRectangle.y + leRectangle.hauteur; // coin inférieur
+				}
+
+				//Maintenant que nous savons quel coin vérifier, nous utilisons
+				//le théorème de Pythagore en utilisant le centre du cercle et le coin identifié
+				let distanceX = centreX_duCercle - coinX;
+				let distanceY = centreY_duCercle - coinY;
+				let distanceXY = Math.sqrt(
+					distanceX * distanceX + distanceY * distanceY
+				);
+
+				//I y a une détection de collision si la distanceXY est plus petite que le rayon du cercle.
+				if (distanceXY <= rayonCercle) {
+					return true;
+				} else {
+					return false;
+				}
+			}
+		</script>
+	</body>
+</html>
